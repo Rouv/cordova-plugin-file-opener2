@@ -29,11 +29,62 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 @implementation FileOpener2
 @synthesize controller = docController;
 
+- (UIViewController*) getTopMostViewController
+{
+    UIWindow *window = [[UIApplication sharedApplication] keyWindow];
+    if (window.windowLevel != UIWindowLevelNormal) {
+        NSArray *windows = [[UIApplication sharedApplication] windows];
+        for(window in windows) {
+            if (window.windowLevel == UIWindowLevelNormal) {
+                break;
+            }
+        }
+    }
+    
+    for (UIView *subView in [window subviews])
+    {
+        UIResponder *responder = [subView nextResponder];
+        
+        //added this block of code for iOS 8 which puts a UITransitionView in between the UIWindow and the UILayoutContainerView
+        if ([responder isEqual:window])
+        {
+            //this is a UITransitionView
+            if ([[subView subviews] count])
+            {
+                UIView *subSubView = [subView subviews][0]; //this should be the UILayoutContainerView
+                responder = [subSubView nextResponder];
+            }
+        }
+        
+        if([responder isKindOfClass:[UIViewController class]]) {
+            return [self topViewController: (UIViewController *) responder];
+        }
+    }
+    
+    return nil;
+}
+
+
+- (UIViewController *) topViewController: (UIViewController *) controller
+{
+    BOOL isPresenting = NO;
+    do {
+        // this path is called only on iOS 6+, so -presentedViewController is fine here.
+        UIViewController *presented = [controller presentedViewController];
+        isPresenting = presented != nil;
+        if(presented != nil) {
+            controller = presented;
+        }
+        
+    } while (isPresenting);
+    
+    return controller;
+}
 - (void) open: (CDVInvokedUrlCommand*)command {
 
 	NSString *path = [[command.arguments objectAtIndex:0] stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLPathAllowedCharacterSet]];
 	NSString *contentType = [command.arguments objectAtIndex:1];
-	BOOL showPreview = YES;
+	BOOL showPreview = NO;
 
 	if ([command.arguments count] >= 3) {
 		showPreview = [[command.arguments objectAtIndex:2] boolValue];
@@ -51,7 +102,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 	} else {
 		uti = (__bridge NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassMIMEType, (__bridge CFStringRef)contentType, NULL);
 	}
-
+NSLog(@"uti %@", uti);
 	dispatch_async(dispatch_get_main_queue(), ^{
 		NSURL *fileURL = [NSURL URLWithString:[path stringByRemovingPercentEncoding]];
 
@@ -79,9 +130,15 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 		if (showPreview) {
 			wasOpened = [docController presentPreviewAnimated: NO];
 		} else {
-			CDVViewController* cont = self.cdvViewController;
-			CGRect rect = CGRectMake(0, 0, cont.view.bounds.size.width, cont.view.bounds.size.height);
-			wasOpened = [docController presentOpenInMenuFromRect:rect inView:cont.view animated:YES];
+            UIWindow *topWindow = [[[UIApplication sharedApplication].windows sortedArrayUsingComparator:^NSComparisonResult(UIWindow *win1, UIWindow *win2) {
+                return win1.windowLevel - win2.windowLevel;
+            }] lastObject];
+            UIView *topView = [[topWindow subviews] lastObject];
+            UIViewController *viewCtrl = [self getTopMostViewController];
+			//CDVViewController* cont = self.cdvViewController;
+
+			CGRect rect = CGRectMake(0, 0, viewCtrl.view.bounds.size.width, viewCtrl.view.bounds.size.height);
+			wasOpened = [docController presentOpenInMenuFromRect:rect inView:viewCtrl.view animated:NO];
 		}
 
 		if(wasOpened) {
